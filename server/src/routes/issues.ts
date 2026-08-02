@@ -7978,9 +7978,22 @@ export function issueRoutes(
         },
       });
 
+      // The decision transaction has already committed the status change. The
+      // remaining side effects (comment sync, resume wake) are best-effort: a
+      // transient failure must not fail the request, because the decision
+      // cannot be retried once the issue has left `in_review`, which would
+      // permanently strand the resume signal. This mirrors the issue-update
+      // wake dispatch, and the issue lands durably in `todo`/`done` regardless.
       if (result.comment) {
-        await issueReferencesSvc.syncComment(result.comment.id);
-        await externalObjectsSvc.syncCommentSafely(result.comment.id);
+        try {
+          await issueReferencesSvc.syncComment(result.comment.id);
+          await externalObjectsSvc.syncCommentSafely(result.comment.id);
+        } catch (err) {
+          logger.warn(
+            { err, issueId: result.issue.id, commentId: result.comment.id },
+            "failed to sync stalled-review decision comment",
+          );
+        }
       }
 
       let wakeQueued = false;
@@ -7988,30 +8001,38 @@ export function issueRoutes(
         const userAuthoredNote = result.comment
           ? { commentId: result.comment.id, authorUserId: actor.actorId }
           : undefined;
-        const wake = await enqueueStalledReviewDecisionWakeup(result.issue.assigneeAgentId, {
-          source: "automation",
-          triggerDetail: "system",
-          reason: "issue_status_changed",
-          requestedByActorType: "user",
-          requestedByActorId: actor.actorId,
-          payload: {
-            issueId: result.issue.id,
-            mutation: "stalled_review_decision",
-            reviewDecision: req.body.action,
-            resumeIntent: true,
-            ...(userAuthoredNote ? { userAuthoredNote } : {}),
-          },
-          contextSnapshot: {
-            issueId: result.issue.id,
-            taskId: result.issue.id,
-            source: "issue.stalled_review_decision",
-            wakeReason: "issue_status_changed",
-            reviewDecision: req.body.action,
-            resumeIntent: true,
-            ...(userAuthoredNote ? { userAuthoredNote } : {}),
-          },
-        });
-        wakeQueued = wake !== null;
+        try {
+          const wake = await enqueueStalledReviewDecisionWakeup(result.issue.assigneeAgentId, {
+            source: "automation",
+            triggerDetail: "system",
+            reason: "issue_status_changed",
+            idempotencyKey: `stalled-review-decision:${result.issue.id}:${req.body.action}`,
+            requestedByActorType: "user",
+            requestedByActorId: actor.actorId,
+            payload: {
+              issueId: result.issue.id,
+              mutation: "stalled_review_decision",
+              reviewDecision: req.body.action,
+              resumeIntent: true,
+              ...(userAuthoredNote ? { userAuthoredNote } : {}),
+            },
+            contextSnapshot: {
+              issueId: result.issue.id,
+              taskId: result.issue.id,
+              source: "issue.stalled_review_decision",
+              wakeReason: "issue_status_changed",
+              reviewDecision: req.body.action,
+              resumeIntent: true,
+              ...(userAuthoredNote ? { userAuthoredNote } : {}),
+            },
+          });
+          wakeQueued = wake !== null;
+        } catch (err) {
+          logger.warn(
+            { err, issueId: result.issue.id, agentId: result.issue.assigneeAgentId },
+            "failed to enqueue stalled-review decision resume wake",
+          );
+        }
       }
 
       res.json({
