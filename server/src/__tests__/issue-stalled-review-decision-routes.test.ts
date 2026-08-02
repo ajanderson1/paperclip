@@ -14,6 +14,7 @@ import {
   heartbeatRuns,
   issueApprovals,
   issueComments,
+  issueInboxArchives,
   issueRecoveryActions,
   issueThreadInteractions,
   issues,
@@ -54,6 +55,7 @@ describeEmbeddedPostgres("stalled review decision routes", () => {
     await db.delete(activityLog);
     await db.delete(heartbeatRuns);
     await db.delete(agentWakeupRequests);
+    await db.delete(issueInboxArchives);
     await db.delete(issues);
     await db.delete(companyMemberships);
     await db.delete(agents);
