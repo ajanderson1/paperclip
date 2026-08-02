@@ -84,14 +84,14 @@ export function StalledReviewActions({
         data-testid="stalled-review-note"
         disabled={pending}
       />
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        {footerSlot ?? <span />}
-        <div className="flex flex-1 flex-wrap items-center gap-2 @xl:flex-none @xl:justify-end">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        {footerSlot ?? <span className="hidden sm:block" />}
+        <div className="flex flex-col gap-2 sm:flex-1 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end @xl:flex-none">
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="min-w-0 flex-1 @xl:flex-none"
+            className="w-full sm:w-auto sm:flex-1 @xl:flex-none"
             disabled={pending}
             onClick={() => decide.mutate("send_back")}
             data-testid="stalled-review-send-back"
@@ -107,7 +107,7 @@ export function StalledReviewActions({
             type="button"
             variant="outline"
             size="sm"
-            className="min-w-0 flex-1 border-amber-400/70 text-amber-900 hover:bg-amber-100 dark:border-amber-500/50 dark:text-amber-100 dark:hover:bg-amber-500/15 @xl:flex-none"
+            className="w-full border-amber-400/70 text-amber-900 hover:bg-amber-100 dark:border-amber-500/50 dark:text-amber-100 dark:hover:bg-amber-500/15 sm:w-auto sm:flex-1 @xl:flex-none"
             disabled={pending || noteEmpty}
             title={noteEmpty ? "Add a note to request changes" : undefined}
             onClick={() => decide.mutate("request_changes")}
@@ -123,7 +123,7 @@ export function StalledReviewActions({
           <Button
             type="button"
             size="sm"
-            className="min-w-0 flex-1 @xl:flex-none"
+            className="w-full sm:w-auto sm:flex-1 @xl:flex-none"
             disabled={pending}
             onClick={() => decide.mutate("approve")}
             data-testid="stalled-review-approve"

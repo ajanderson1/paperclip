@@ -22,9 +22,18 @@ function issue(reviewAttention: IssueReviewAttention): ReviewPanelIssue {
   return { id: "issue-1", companyId: "company-1", status: "in_review", reviewAttention };
 }
 
-function Frame({ label, children }: { label: string; children: React.ReactNode }) {
+function Frame({
+  label,
+  children,
+  width = 680,
+}: {
+  label: string;
+  children: React.ReactNode;
+  /** Content width in px — narrow (390) exercises the stalled action row's base stacked layout. */
+  width?: number;
+}) {
   return (
-    <div className="mx-auto max-w-[680px] space-y-2 p-6">
+    <div className="mx-auto space-y-2 p-6" style={{ maxWidth: width }}>
       <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
       {children}
     </div>
@@ -110,6 +119,22 @@ export const Stalled: Story = {
   ),
 };
 
+export const StalledNarrow: Story = {
+  name: "Stalled · 390px phone (action row stacks)",
+  render: () => (
+    <Frame width={390} label="In review · phone width — the three verbs stack, never overlap">
+      <IssueReviewPanel
+        issue={issue({
+          state: "stalled",
+          paths: [],
+          reason:
+            "Issue is in review without a maintained reviewer, interaction, approval, monitor, run, wake, or recovery path.",
+        })}
+      />
+    </Frame>
+  ),
+};
+
 const stalledReviewRow: AttentionItem = {
   id: "review:issue-1",
   companyId: "company-1",
@@ -161,6 +186,24 @@ export const DecisionsCardInline: Story = {
     const [expanded, setExpanded] = useState(true);
     return (
       <Frame label="/decisions · a stalled review actuates the three verbs inline">
+        <AttentionQueueRow
+          item={stalledReviewRow}
+          companyId="company-1"
+          expanded={expanded}
+          onToggleExpand={() => setExpanded((prev) => !prev)}
+          onDismiss={() => {}}
+        />
+      </Frame>
+    );
+  },
+};
+
+export const DecisionsCardInlineNarrow: Story = {
+  name: "Decisions card · 390px phone (verbs stack in-row)",
+  render: () => {
+    const [expanded, setExpanded] = useState(true);
+    return (
+      <Frame width={390} label="/decisions · phone width — the inline verbs stack, never overlap">
         <AttentionQueueRow
           item={stalledReviewRow}
           companyId="company-1"
