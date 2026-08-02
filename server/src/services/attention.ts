@@ -1333,10 +1333,17 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
         const issue = reviewIssueMap.get(review.id);
         if (!issue) continue;
         const dedupKey = `review:${review.id}`;
+        // A stalled review carries no interaction/approval/monitor to open, so
+        // it is resolved in-row with the three review verbs (PAP-16080 §4.4).
+        // Covered reviews still deep-link — their real action lives elsewhere
+        // (the pending interaction/approval card, a monitor, a live run).
+        const reviewSubject = issueSubject(prefix, issue);
         add(createItem({
           companyId,
           sourceKind: "review",
-          subject: issueSubject(prefix, issue),
+          subject: stalled
+            ? { ...reviewSubject, metadata: { ...reviewSubject.metadata, reviewAttentionState: "stalled" } }
+            : reviewSubject,
           whyNow: stalled
             ? "Issue is in review without a maintained reviewer, interaction, approval, monitor, run, wake, or recovery path."
             : pendingApprovalId
@@ -1353,7 +1360,7 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
                 { id: "approve", label: "Approve", description: "Approve the review and advance the issue." },
                 { id: "request_changes", label: "Request changes", description: "Return the issue to the assignee with changes requested." },
               ),
-          inlineResolvable: false,
+          inlineResolvable: stalled,
           entryRule: stalled
             ? "issues.status = 'in_review' and reviewAttention.state = 'stalled'."
             : "issues.status = 'in_review' and human reviewer, user assignee, or linked pending approval exists.",

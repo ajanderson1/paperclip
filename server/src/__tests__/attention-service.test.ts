@@ -650,6 +650,11 @@ describeEmbeddedPostgres("attention service", () => {
       item.sourceKind === "review" && item.subject.title === "Stalled review blocker"
     )).toMatchObject({
       whyNow: expect.stringContaining("without a maintained"),
+      // A stalled review resolves in-row on the /decisions card (PAP-16080 §4.4).
+      inlineResolvable: true,
+      subject: expect.objectContaining({
+        metadata: expect.objectContaining({ reviewAttentionState: "stalled" }),
+      }),
       decisionVerbs: expect.arrayContaining([
         expect.objectContaining({ id: "choose_review_path", label: "Choose review path" }),
       ]),
