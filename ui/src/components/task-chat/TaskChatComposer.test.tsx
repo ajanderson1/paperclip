@@ -417,6 +417,39 @@ describe("TaskChatComposer", () => {
     );
   });
 
+  it("blocks send while a file upload is pending, then includes the file once it lands", async () => {
+    const onAdd = vi.fn().mockResolvedValue(undefined);
+    let resolveUpload!: (value: { contentPath: string; originalFilename: string }) => void;
+    const onAttachImage = vi.fn().mockReturnValue(
+      new Promise<{ contentPath: string; originalFilename: string }>((resolve) => {
+        resolveUpload = resolve;
+      }),
+    );
+    render(<TaskChatComposer onAdd={onAdd} workMode="standard" onAttachImage={onAttachImage} />);
+
+    typeText("Here is the file.");
+    pasteFiles([new File(["plain"], "notes.txt", { type: "text/plain" })]);
+    await flushAsync();
+
+    // Text alone would enable send, but the in-flight upload must hold it —
+    // otherwise the comment posts without the file the user selected.
+    expect(sendButton().disabled).toBe(true);
+    pressKey("Enter", { metaKey: true });
+    await flushAsync();
+    expect(onAdd).not.toHaveBeenCalled();
+
+    resolveUpload({ contentPath: "/attachments/notes.txt", originalFilename: "notes.txt" });
+    await flushAsync();
+    expect(sendButton().disabled).toBe(false);
+    flushSync(() => sendButton().click());
+    await flushAsync();
+    expect(onAdd).toHaveBeenCalledWith(
+      "Here is the file.\n\n[notes.txt](/attachments/notes.txt)",
+      undefined,
+      undefined,
+    );
+  });
+
   it("removes an attachment chip via its remove button", async () => {
     const onAttachImage = vi.fn().mockResolvedValue({
       contentPath: "/attachments/notes.txt",

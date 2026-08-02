@@ -271,10 +271,12 @@ export function TaskChatComposer({
   const attachedRefs = attachments.filter(
     (item) => item.status === "attached" && item.contentPath,
   );
+  // Sending mid-upload would silently drop the pending file from the comment.
+  const uploadPending = attachments.some((item) => item.status === "uploading");
 
   async function submit() {
     const trimmed = bodyRef.current.trim();
-    if ((!trimmed && attachedRefs.length === 0) || submitting || disabled) return;
+    if ((!trimmed && attachedRefs.length === 0) || uploadPending || submitting || disabled) return;
 
     const refLines = attachedRefs
       .map((item) => `[${escapeMarkdownLabel(item.name)}](${item.contentPath})`)
@@ -481,8 +483,13 @@ export function TaskChatComposer({
         <button
           type="button"
           onClick={() => void submit()}
-          disabled={disabled || submitting || (body.trim().length === 0 && attachedRefs.length === 0)}
-          title="Send (⌘+Enter)"
+          disabled={
+            disabled ||
+            submitting ||
+            uploadPending ||
+            (body.trim().length === 0 && attachedRefs.length === 0)
+          }
+          title={uploadPending ? "Waiting for upload to finish" : "Send (⌘+Enter)"}
           aria-label="Send"
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-transform hover:scale-105 disabled:scale-100 disabled:bg-muted disabled:text-muted-foreground"
           data-testid="task-chat-composer-send"
