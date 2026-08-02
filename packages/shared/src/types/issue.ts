@@ -431,6 +431,15 @@ export interface IssueReviewAttention {
   reason: string | null;
 }
 
+export type StalledReviewDecisionAction = "approve" | "request_changes" | "send_back";
+
+export interface StalledReviewDecisionResponse {
+  issue: Issue;
+  action: StalledReviewDecisionAction;
+  comment: IssueComment | null;
+  wakeQueued: boolean;
+}
+
 export type IssueInboxAttentionKind = "blocked";
 
 export type IssueBlockedInboxState =

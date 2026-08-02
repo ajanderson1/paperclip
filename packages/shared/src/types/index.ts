@@ -579,6 +579,8 @@ export type {
   IssueReviewAttentionPath,
   IssueReviewAttentionPathKind,
   IssueReviewAttentionState,
+  StalledReviewDecisionAction,
+  StalledReviewDecisionResponse,
   IssueInboxAttentionKind,
   IssueBlockedInboxAction,
   IssueBlockedInboxAttention,

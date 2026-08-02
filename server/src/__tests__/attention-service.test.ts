@@ -166,6 +166,7 @@ describeEmbeddedPostgres("attention service", () => {
     createdAt?: Date;
     unblockDescriptor?: { owner: { userId: string } | "board"; action: string } | null;
     blockedTransitionAt?: Date | null;
+    harnessKind?: string | null;
   }) {
     const id = input.id ?? randomUUID();
     await db.insert(issues).values({
@@ -186,6 +187,7 @@ describeEmbeddedPostgres("attention service", () => {
       executionState: input.executionState ?? null,
       unblockDescriptor: input.unblockDescriptor ?? null,
       blockedTransitionAt: input.blockedTransitionAt ?? null,
+      harnessKind: input.harnessKind ?? null,
       createdAt: input.createdAt,
       updatedAt: input.updatedAt,
     });
@@ -214,6 +216,41 @@ describeEmbeddedPostgres("attention service", () => {
       currentParticipant: { type: "agent", agentId },
     };
   }
+
+  it("excludes internal harness reviews from items, counts, and decision queues", async () => {
+    const { companyId, workerId } = await seedCompany("ATH");
+    const harnessIssueId = await insertIssue({
+      companyId,
+      identifier: "ATH-1",
+      title: "Internal harness review",
+      status: "in_review",
+      assigneeAgentId: workerId,
+      harnessKind: "skill_test",
+    });
+    const queueId = randomUUID();
+    await db.insert(decisionQueues).values({
+      id: queueId,
+      companyId,
+      key: "internal-review",
+      title: "Internal review",
+      createdByType: "user",
+      createdByUserId: "board-user",
+    });
+    await db.insert(decisionQueueItems).values({
+      companyId,
+      queueId,
+      sourceKind: "review",
+      sourceId: harnessIssueId,
+      addedByType: "user",
+      addedByUserId: "board-user",
+    });
+
+    const feed = await attentionService(db).list(companyId, { userId: "board-user" });
+
+    expect(feed.items.some((item) => item.subject.id === harnessIssueId)).toBe(false);
+    expect(feed.countsBySourceKind.review ?? 0).toBe(0);
+    expect(feed.items.flatMap((item) => item.queues).some((queue) => queue.key === "internal-review")).toBe(false);
+  });
 
   it("returns ranked decision-only items for every active source and excludes non-human or transient rows", async () => {
     const { companyId, workerId, reviewerId } = await seedCompany("ATN");

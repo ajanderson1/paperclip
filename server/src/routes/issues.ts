@@ -59,6 +59,7 @@ import {
   rejectIssueThreadInteractionSchema,
   restoreIssueDocumentRevisionSchema,
   respondIssueThreadInteractionSchema,
+  stalledReviewDecisionSchema,
   submitIssueThreadInteractionVerdictsSchema,
   updateIssueWorkProductSchema,
   updateDocumentAnnotationThreadSchema,
@@ -175,6 +176,7 @@ import {
   readAcceptedPlanConfirmationTarget,
 } from "../services/issues.js";
 import { authorizationDeniedDetails } from "../services/authorization.js";
+import { stalledReviewDecisionService } from "../services/stalled-review-decisions.js";
 import { environmentService } from "../services/environments.js";
 import { environmentRuntimeService } from "../services/environment-runtime.js";
 import { redactSensitiveText } from "../redaction.js";
@@ -2613,6 +2615,10 @@ export function issueRoutes(
       agentId: string,
       options: Parameters<ReturnType<typeof heartbeatService>["wakeup"]>[1],
     ) => ReturnType<ReturnType<typeof heartbeatService>["wakeup"]>;
+    stalledReviewDecisionEnqueueWakeup?: (
+      agentId: string,
+      options: Parameters<ReturnType<typeof heartbeatService>["wakeup"]>[1],
+    ) => ReturnType<ReturnType<typeof heartbeatService>["wakeup"]>;
     issueListDiagnostics?: IssueListDiagnostics;
     approveToolActionRequest?: (input: {
       companyId: string;
@@ -2629,6 +2635,7 @@ export function issueRoutes(
   const heartbeat = heartbeatService(db, {
     pluginWorkerManager: opts.pluginWorkerManager,
   });
+  const enqueueStalledReviewDecisionWakeup = opts.stalledReviewDecisionEnqueueWakeup ?? heartbeat.wakeup;
   const enqueueRecoveryActionWakeup = opts.recoveryActionEnqueueWakeup ?? heartbeat.wakeup;
   const feedback = feedbackService(db);
   const companiesSvc = companyService(db);
@@ -7931,11 +7938,104 @@ export function issueRoutes(
     res.json(result);
   });
 
+  router.post(
+    "/issues/:id/stalled-review-decision",
+    validate(stalledReviewDecisionSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const issue = await getAccessibleResource(req, res, svc.getById(id), "Issue not found");
+      if (!issue) return;
+      assertBoard(req);
+
+      if (req.actor.source !== "local_implicit") {
+        const userId = req.actor.userId?.trim();
+        const membership = userId
+          ? await db
+              .select({ membershipRole: companyMemberships.membershipRole })
+              .from(companyMemberships)
+              .where(and(
+                eq(companyMemberships.companyId, issue.companyId),
+                eq(companyMemberships.principalType, "user"),
+                eq(companyMemberships.principalId, userId),
+                eq(companyMemberships.status, "active"),
+              ))
+              .then((rows) => rows[0] ?? null)
+          : null;
+        if (!membership?.membershipRole || membership.membershipRole === "viewer") {
+          throw forbidden("Active non-viewer company membership required");
+        }
+      }
+
+      const actor = getActorInfo(req);
+      const result = await stalledReviewDecisionService(db).decide({
+        issueId: issue.id,
+        companyId: issue.companyId,
+        action: req.body.action,
+        note: req.body.note,
+        actor: {
+          userId: actor.actorId,
+          runId: actor.runId,
+        },
+      });
+
+      if (result.comment) {
+        await issueReferencesSvc.syncComment(result.comment.id);
+        await externalObjectsSvc.syncCommentSafely(result.comment.id);
+      }
+
+      let wakeQueued = false;
+      if (req.body.action !== "approve" && result.issue.assigneeAgentId) {
+        const userAuthoredNote = result.comment
+          ? { commentId: result.comment.id, authorUserId: actor.actorId }
+          : undefined;
+        const wake = await enqueueStalledReviewDecisionWakeup(result.issue.assigneeAgentId, {
+          source: "automation",
+          triggerDetail: "system",
+          reason: "issue_status_changed",
+          requestedByActorType: "user",
+          requestedByActorId: actor.actorId,
+          payload: {
+            issueId: result.issue.id,
+            mutation: "stalled_review_decision",
+            reviewDecision: req.body.action,
+            resumeIntent: true,
+            ...(userAuthoredNote ? { userAuthoredNote } : {}),
+          },
+          contextSnapshot: {
+            issueId: result.issue.id,
+            taskId: result.issue.id,
+            source: "issue.stalled_review_decision",
+            wakeReason: "issue_status_changed",
+            reviewDecision: req.body.action,
+            resumeIntent: true,
+            ...(userAuthoredNote ? { userAuthoredNote } : {}),
+          },
+        });
+        wakeQueued = wake !== null;
+      }
+
+      res.json({
+        issue: result.issue,
+        action: req.body.action,
+        comment: result.comment,
+        wakeQueued,
+      });
+    },
+  );
+
   router.patch("/issues/:id", validate(updateIssueRouteSchema), async (req, res) => {
     const id = req.params.id as string;
     const existing = await getAccessibleResource(req, res, svc.getById(id), "Issue not found");
     if (!existing) return;
     assertNoAgentHostWorkspaceCommandMutation(req, collectIssueWorkspaceCommandPaths(req.body));
+    if (
+      req.actor.type === "agent"
+      && existing.status === "in_review"
+      && req.body.status === "done"
+      && existing.assigneeAgentId === req.actor.agentId
+    ) {
+      throw forbidden("Agents cannot approve their own in-review work");
+    }
     if (!(await assertAgentIssueMutationAllowed(req, res, existing))) return;
     if (!(await assertCheapRecoveryIssueAssigneeProfileAllowed(req, res, existing, req.body))) return;
 
