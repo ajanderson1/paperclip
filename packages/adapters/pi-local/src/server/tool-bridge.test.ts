@@ -73,6 +73,19 @@ describe("parsePaperclipToolBridgeConfig", () => {
 });
 
 describe("Paperclip tool bridge", () => {
+  it("serves only its declared manifest to an authenticated extension", async () => {
+    const bridge = await startBridge();
+
+    const response = await fetch(`${bridge.url}/manifest`, {
+      headers: { authorization: `Bearer ${bridge.capability}` },
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([
+      { name: "ajanderson.journal-wiki:begin_operation" },
+    ]);
+  });
+
   it("forwards an allowed tool with server-owned run context", async () => {
     const forward = vi.fn(async () => ({ status: 200, body: { mode: "no_changes" } }));
     const bridge = await startBridge({ forward });

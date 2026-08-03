@@ -71,7 +71,7 @@ function capabilityMatches(value: string | undefined, expected: string): boolean
   return received.length === expectedBuffer.length && timingSafeEqual(received, expectedBuffer);
 }
 
-function writeJson(response: ServerResponse, status: number, body: RecordValue): void {
+function writeJson(response: ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
@@ -184,12 +184,16 @@ export async function startPaperclipToolBridge(
       writeJson(response, 410, { error: "Bridge is unavailable." });
       return;
     }
-    if (request.method !== "POST" || request.url !== "/invoke") {
-      writeJson(response, 404, { error: "Not found." });
-      return;
-    }
     if (!capabilityMatches(request.headers.authorization, capability)) {
       writeJson(response, 401, { error: "Bridge authentication failed." });
+      return;
+    }
+    if (request.method === "GET" && request.url === "/manifest") {
+      writeJson(response, 200, config.toolNames.map((name) => ({ name })));
+      return;
+    }
+    if (request.method !== "POST" || request.url !== "/invoke") {
+      writeJson(response, 404, { error: "Not found." });
       return;
     }
 

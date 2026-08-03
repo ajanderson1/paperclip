@@ -120,7 +120,10 @@ describe("pi_local bridge invocation", () => {
       "--no-context-files",
       "--extension",
       expect.stringContaining("paperclip-tool-bridge"),
+      "--tools",
+      "journal_begin_operation",
     ]));
+    expect(args).not.toContain("--skill");
     expect(args).not.toContain("bash");
     expect(processOptions.env.PAPERCLIP_API_KEY).toBeUndefined();
   });

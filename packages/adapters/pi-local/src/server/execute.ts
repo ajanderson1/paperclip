@@ -51,6 +51,7 @@ import { isPiUnknownSessionError, parsePiJsonl } from "./parse.js";
 import { ensurePiModelConfiguredAndAvailable } from "./models.js";
 import { preparePiRuntimeConfig } from "./runtime-config.js";
 import { parsePaperclipToolBridgeConfig, startPaperclipToolBridge } from "./tool-bridge.js";
+import { paperclipToolBridgeAlias } from "../runtime/paperclip-tool-bridge.js";
 import { SANDBOX_INSTALL_COMMAND } from "../index.js";
 
 const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -687,6 +688,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         const extensionSuffix = path.extname(fileURLToPath(import.meta.url));
         args.push("--no-builtin-tools", "--no-extensions", "--no-skills", "--no-context-files");
         args.push("--extension", path.join(__moduleDir, "..", "runtime", `paperclip-tool-bridge${extensionSuffix}`));
+        args.push("--tools", toolBridgeConfig.toolNames.map(paperclipToolBridgeAlias).join(","));
       } else {
         args.push("--tools", "read,bash,edit,write,grep,find,ls");
         args.push("--skill", remoteSkillsDir ?? PI_AGENT_SKILLS_DIR);
