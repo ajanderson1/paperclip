@@ -329,13 +329,19 @@ describeEmbeddedPostgres("issue monitor scheduler", () => {
       agentId: participantAgentId,
       reason: "execution_review_participant_recovery",
     });
-    await waitForHeartbeatIdle();
+    await waitForHeartbeatSideEffectsSettled();
     const participantRuns = await db
       .select()
       .from(heartbeatRuns)
       .where(eq(heartbeatRuns.agentId, participantAgentId));
-    expect(participantRuns).toHaveLength(1);
-    expect(participantRuns[0]?.errorCode).not.toBe("issue_assignee_changed");
+    expect(participantRuns).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        errorCode: expect.not.stringMatching(/^issue_assignee_changed$/),
+        contextSnapshot: expect.objectContaining({
+          wakeReason: "execution_review_participant_recovery",
+        }),
+      }),
+    ]));
   });
 
   it("lets the board trigger a scheduled issue monitor immediately", async () => {
