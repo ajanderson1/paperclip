@@ -271,12 +271,22 @@ export function TaskChatComposer({
   const attachedRefs = attachments.filter(
     (item) => item.status === "attached" && item.contentPath,
   );
-  // Sending mid-upload would silently drop the pending file from the comment.
+  // Sending mid-upload would silently drop the pending file from the comment;
+  // sending past a failed chip would discard the file the user selected and
+  // clear its error state, so both hold submission until resolved or removed.
   const uploadPending = attachments.some((item) => item.status === "uploading");
+  const uploadFailed = attachments.some((item) => item.status === "error");
 
   async function submit() {
     const trimmed = bodyRef.current.trim();
-    if ((!trimmed && attachedRefs.length === 0) || uploadPending || submitting || disabled) return;
+    if (
+      (!trimmed && attachedRefs.length === 0) ||
+      uploadPending ||
+      uploadFailed ||
+      submitting ||
+      disabled
+    )
+      return;
 
     const refLines = attachedRefs
       .map((item) => `[${escapeMarkdownLabel(item.name)}](${item.contentPath})`)
@@ -487,9 +497,16 @@ export function TaskChatComposer({
             disabled ||
             submitting ||
             uploadPending ||
+            uploadFailed ||
             (body.trim().length === 0 && attachedRefs.length === 0)
           }
-          title={uploadPending ? "Waiting for upload to finish" : "Send (⌘+Enter)"}
+          title={
+            uploadPending
+              ? "Waiting for upload to finish"
+              : uploadFailed
+                ? "Remove the failed attachment to send"
+                : "Send (⌘+Enter)"
+          }
           aria-label="Send"
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-transform hover:scale-105 disabled:scale-100 disabled:bg-muted disabled:text-muted-foreground"
           data-testid="task-chat-composer-send"

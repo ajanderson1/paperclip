@@ -450,6 +450,30 @@ describe("TaskChatComposer", () => {
     );
   });
 
+  it("blocks send while a failed attachment chip remains, then sends after it is removed", async () => {
+    const onAdd = vi.fn().mockResolvedValue(undefined);
+    const onAttachImage = vi.fn().mockRejectedValue(new Error("Too large"));
+    render(<TaskChatComposer onAdd={onAdd} workMode="standard" onAttachImage={onAttachImage} />);
+
+    typeText("Here is the file.");
+    pasteFiles([new File(["plain"], "notes.txt", { type: "text/plain" })]);
+    await flushAsync();
+
+    // Text alone would enable send, but the failed chip must hold it —
+    // otherwise the comment posts without the file and the error chip clears.
+    expect(sendButton().disabled).toBe(true);
+    pressKey("Enter", { metaKey: true });
+    await flushAsync();
+    expect(onAdd).not.toHaveBeenCalled();
+
+    const remove = container.querySelector<HTMLButtonElement>('button[aria-label="Remove notes.txt"]');
+    flushSync(() => remove!.click());
+    expect(sendButton().disabled).toBe(false);
+    flushSync(() => sendButton().click());
+    await flushAsync();
+    expect(onAdd).toHaveBeenCalledWith("Here is the file.", undefined, undefined);
+  });
+
   it("removes an attachment chip via its remove button", async () => {
     const onAttachImage = vi.fn().mockResolvedValue({
       contentPath: "/attachments/notes.txt",
