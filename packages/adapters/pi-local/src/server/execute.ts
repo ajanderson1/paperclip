@@ -50,6 +50,7 @@ import { shellQuote } from "@paperclipai/adapter-utils/ssh";
 import { isPiUnknownSessionError, parsePiJsonl } from "./parse.js";
 import { ensurePiModelConfiguredAndAvailable } from "./models.js";
 import { preparePiRuntimeConfig } from "./runtime-config.js";
+import { parsePaperclipToolBridgeConfig, startPaperclipToolBridge } from "./tool-bridge.js";
 import { SANDBOX_INSTALL_COMMAND } from "../index.js";
 
 const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -228,6 +229,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const command = asString(config.command, "pi");
   const model = asString(config.model, "").trim();
   const thinking = asString(config.thinking, "").trim();
+  const toolBridgeConfig = parsePaperclipToolBridgeConfig(config);
 
   // Parse model into provider and model id
   const provider = parseModelProvider(model);
@@ -255,10 +257,17 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   if (!executionTargetIsRemote) {
     await ensureSessionsDir();
   }
+  if (toolBridgeConfig && executionTargetIsRemote) {
+    throw new Error("paperclipToolBridge supports local execution only");
+  }
 
-  const piSkillEntries = await readPaperclipRuntimeSkillEntries(config, __moduleDir);
-  const desiredPiSkillNames = resolvePaperclipDesiredSkillNames(config, piSkillEntries);
-  if (!executionTargetIsRemote) {
+  const piSkillEntries = toolBridgeConfig
+    ? []
+    : await readPaperclipRuntimeSkillEntries(config, __moduleDir);
+  const desiredPiSkillNames = toolBridgeConfig
+    ? []
+    : resolvePaperclipDesiredSkillNames(config, piSkillEntries);
+  if (!executionTargetIsRemote && !toolBridgeConfig) {
     await ensurePiSkillsInjected(onLog, piSkillEntries, desiredPiSkillNames);
   }
 
@@ -325,7 +334,27 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   if (localAgentConfigDir) {
     env.PI_CODING_AGENT_DIR = localAgentConfigDir;
   }
+  let localToolBridge: Awaited<ReturnType<typeof startPaperclipToolBridge>> | null = null;
   try {
+    if (toolBridgeConfig) {
+      const projectId = asString(context.projectId, "") || asString(workspaceContext.projectId, "");
+      localToolBridge = await startPaperclipToolBridge({
+        hostApiToken: env.PAPERCLIP_API_KEY ?? "",
+        hostApiUrl: env.PAPERCLIP_API_URL ?? process.env.PAPERCLIP_API_URL ?? "",
+        runContext: {
+          companyId: agent.companyId,
+          agentId: agent.id,
+          projectId,
+          runId,
+          issueId: wakeTaskId ?? "",
+        },
+        toolNames: toolBridgeConfig.toolNames,
+      });
+      delete env.PAPERCLIP_API_KEY;
+      env.PAPERCLIP_TOOL_BRIDGE_URL = localToolBridge.url;
+      env.PAPERCLIP_TOOL_BRIDGE_CAPABILITY = localToolBridge.capability;
+    }
+
     // Prepend installed skill `bin/` dirs to PATH so an agent's bash tool can
     // invoke skill binaries (e.g. `paperclip-get-issue`) by name. Without this,
     // any pi_local agent whose AGENTS.md calls a skill command via bash hits
@@ -654,9 +683,15 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       if (modelId) args.push("--model", modelId);
       if (thinking) args.push("--thinking", thinking);
 
-      args.push("--tools", "read,bash,edit,write,grep,find,ls");
+      if (toolBridgeConfig) {
+        const extensionSuffix = path.extname(fileURLToPath(import.meta.url));
+        args.push("--no-builtin-tools", "--no-extensions", "--no-skills", "--no-context-files");
+        args.push("--extension", path.join(__moduleDir, "..", "runtime", `paperclip-tool-bridge${extensionSuffix}`));
+      } else {
+        args.push("--tools", "read,bash,edit,write,grep,find,ls");
+        args.push("--skill", remoteSkillsDir ?? PI_AGENT_SKILLS_DIR);
+      }
       args.push("--session", sessionFile);
-      args.push("--skill", remoteSkillsDir ?? PI_AGENT_SKILLS_DIR);
 
       if (extraArgs.length > 0) args.push(...extraArgs);
 
@@ -837,6 +872,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     } finally {
       await Promise.all([
         paperclipBridge?.stop(),
+        localToolBridge?.stop(),
         restoreRemoteWorkspace?.(),
         localSkillsDir ? fs.rm(path.dirname(localSkillsDir), { recursive: true, force: true }).catch(() => undefined) : Promise.resolve(),
       ]);
