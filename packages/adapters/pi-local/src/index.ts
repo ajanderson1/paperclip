@@ -32,7 +32,6 @@ Core fields:
 - thinking (string, optional): thinking level (off, minimal, low, medium, high, xhigh)
 - command (string, optional): defaults to "pi"
 - env (object, optional): KEY=VALUE environment variables
-- paperclipToolBridge (object, optional): local-only, default-deny plugin capability bridge with a non-empty \`toolNames\` array of fully namespaced plugin tools (for example \`ajanderson.journal-wiki:begin_operation\`)
 
 Operational fields:
 - timeoutSec (number, optional): run timeout in seconds
@@ -42,8 +41,6 @@ Notes:
 - Pi supports multiple providers and models. Use \`pi --list-models\` to list available options.
 - Paperclip requires an explicit \`model\` value for \`pi_local\` agents.
 - Sessions are stored in ~/.pi/paperclips/ and resumed with --session.
-- All tools (read, bash, edit, write, grep, find, ls) are enabled by default when \`paperclipToolBridge\` is absent.
-- \`paperclipToolBridge\` starts Pi without built-in tools, discovered extensions, skills, or context files. It loads only Paperclip's explicit bridge extension and omits \`PAPERCLIP_API_KEY\` from Pi's child environment.
-- Bridge \`toolNames\` are a runtime allowlist, not a replacement for an agent-bound Paperclip default-deny tool profile. Both must allow a call.
+- All tools (read, bash, edit, write, grep, find, ls) are enabled by default.
 - Agent instructions are appended to Pi's system prompt via --append-system-prompt, while the user task is sent via -p.
 `;
