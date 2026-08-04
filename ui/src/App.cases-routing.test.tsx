@@ -100,8 +100,9 @@ async function renderAppAt(container: HTMLElement, path: string) {
   return root;
 }
 
-async function waitForRoute(container: HTMLElement, text: string) {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+async function waitForRoute(container: HTMLElement, text: string, timeoutMs = 1_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
     if (container.textContent?.includes(text)) return;
     await new Promise((resolve) => window.setTimeout(resolve, 0));
   }

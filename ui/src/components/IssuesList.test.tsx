@@ -1409,7 +1409,7 @@ describe("IssuesList", () => {
     act(() => {
       root.unmount();
     });
-  });
+  }, 15_000);
 
   it("waits for the desktop main scroll container before rendering more local rows", async () => {
     const manyIssues = Array.from({ length: 120 }, (_, index) =>

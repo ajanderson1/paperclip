@@ -234,7 +234,10 @@ describeEmbeddedPostgres("company import batches inserts", () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-import-batching-");
     db = createDb(tempDb.connectionString);
     counts = instrumentInserts(db as unknown as Record<string, unknown>);
-  }, 30_000);
+  // This real embedded-Postgres boot can contend with prior database teardown
+  // in the deliberately serialized release lane; keep it bounded but above the
+  // observed 30s cold-start tail on macOS.
+  }, 90_000);
 
   afterAll(async () => {
     await tempDb?.cleanup();

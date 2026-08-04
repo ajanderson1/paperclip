@@ -686,7 +686,9 @@ describe("CompanyEnvironments — test provider button", () => {
         envVars: { API_TOKEN: { type: "plain", value: "draft-token" } },
       }),
     );
-    expect(getEnvironmentFormPage()).toBeNull();
+    await waitForAssertion(() => {
+      expect(getEnvironmentFormPage()).toBeNull();
+    });
   });
 
   it("confirms before cancelling the edit page with unsaved environment variable drafts", async () => {

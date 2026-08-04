@@ -10,6 +10,11 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    // JSDOM-heavy suites allocate a full DOM per worker. Cap worker fan-out so
+    // rendering assertions retain CPU time on developer laptops and CI.
+    maxWorkers: 4,
+    minWorkers: 1,
+    pool: "forks",
     setupFiles: ["./vitest.setup.ts"],
   },
 });

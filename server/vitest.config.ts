@@ -12,6 +12,9 @@ export default defineConfig({
     // mirrors it for the same reason.
     hookTimeout: 30000,
     teardownTimeout: 30000,
+    // Route suites cold-load the application graph and an ephemeral HTTP
+    // listener; macOS occasionally exceeds Vitest's 5s default by milliseconds.
+    testTimeout: 15000,
     isolate: true,
     maxConcurrency: 1,
     maxWorkers: 1,

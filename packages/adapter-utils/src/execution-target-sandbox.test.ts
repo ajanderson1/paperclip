@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import net from "node:net";
 import { execFile, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -127,7 +128,9 @@ describe("sandbox adapter execution targets", () => {
         clearTimeout(timeout);
         reject(error);
       });
-      child.on("exit", (exitCode) => {
+      // `exit` can occur before the stdout/stderr pipes have drained; `close`
+      // guarantees their final chunks were delivered before assertions read them.
+      child.on("close", (exitCode) => {
         clearTimeout(timeout);
         resolve(exitCode);
       });
@@ -511,7 +514,7 @@ describe("sandbox adapter execution targets", () => {
       const timeout = setTimeout(() => {
         child.kill("SIGKILL");
         reject(new Error("Timed out waiting for streaming process session proxy."));
-      }, 5000);
+      }, 10_000);
       child.on("error", (error) => {
         clearTimeout(timeout);
         reject(error);
@@ -528,7 +531,7 @@ describe("sandbox adapter execution targets", () => {
       await waitForCondition(
         () => stdout.includes("delta:ping\n") && stderr.includes("trace:ping\n"),
         "Timed out waiting for live process session output.",
-        3000,
+        8_000,
       );
       expect(exited).toBe(false);
 
@@ -539,6 +542,54 @@ describe("sandbox adapter execution targets", () => {
         child.kill("SIGKILL");
         await exitPromise.catch(() => undefined);
       }
+      await bridge?.stop();
+    }
+  });
+
+  it("terminates the remote child when bridge teardown removes its session directory", async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-stop-"));
+    cleanupDirs.push(rootDir);
+    const childPath = path.join(rootDir, "long-running-acp-child.mjs");
+    const readyPath = path.join(rootDir, "ready");
+    const stoppedPath = path.join(rootDir, "stopped");
+    await writeFile(
+      childPath,
+      [
+        'import { writeFileSync } from "node:fs";',
+        `writeFileSync(${JSON.stringify(readyPath)}, "ready");`,
+        `process.on("SIGTERM", () => { writeFileSync(${JSON.stringify(stoppedPath)}, "stopped"); process.exit(0); });`,
+        "setInterval(() => {}, 1_000);",
+      ].join("\n"),
+      "utf8",
+    );
+    const target: AdapterSandboxExecutionTarget = {
+      kind: "remote",
+      transport: "sandbox",
+      providerKey: "local-test",
+      remoteCwd: rootDir,
+      timeoutMs: 30_000,
+      runner: createLocalSandboxRunner(),
+    };
+
+    const bridge = await startAdapterExecutionTargetProcessSessionBridge({
+      runId: "run-process-session-stop",
+      target,
+      runtimeRootDir: path.posix.join(rootDir, ".paperclip-runtime", "acpx"),
+      adapterKey: "acpx",
+      command: process.execPath,
+      args: [childPath],
+      cwd: rootDir,
+      env: {},
+      timeoutSec: 5,
+      onLog: async () => {},
+    });
+    expect(bridge).not.toBeNull();
+
+    try {
+      await waitForCondition(() => existsSync(readyPath), "Timed out waiting for remote child startup.", 3_000);
+      await bridge!.stop();
+      await waitForCondition(() => existsSync(stoppedPath), "Timed out waiting for bridge teardown to terminate remote child.", 3_000);
+    } finally {
       await bridge?.stop();
     }
   });

@@ -52,6 +52,16 @@ describe("local process sandbox", () => {
     expect(() => parseLocalProcessNetworkScope("public")).toThrow('"deny" or "allowlist"');
   });
 
+  it.runIf(process.platform !== "linux")("rejects scoped execution on unsupported platforms", async () => {
+    await expect(buildLocalProcessSandboxSpawnTarget({
+      executable: process.execPath,
+      args: ["-e", "process.exit(0)"],
+      cwd: process.cwd(),
+      options: { workspaceDir: process.cwd(), networkScope: "deny" },
+    })).rejects.toThrow("currently supported only on Linux");
+  });
+
+  describe.runIf(process.platform === "linux")("Linux Bubblewrap sandbox", () => {
   it("describes every valid allowlist input when no proxy rules remain", async () => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-network-rules-"));
     cleanup.push(workspace);
@@ -443,4 +453,5 @@ function request(url) {
       }
     },
   );
+  });
 });
