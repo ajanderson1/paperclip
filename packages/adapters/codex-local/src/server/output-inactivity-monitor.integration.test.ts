@@ -70,7 +70,9 @@ describe("codex inactivity monitor (integration: real subprocess)", () => {
     "kills a codex child that goes silent after one event and surfaces a monitor failure",
     async () => {
       const runId = `monitor-integration-${Date.now()}`;
-      const timeoutMs = 250;
+      // Allow the real Node child to cold-start before measuring its deliberate
+      // post-event silence; 250ms races process startup under a loaded suite.
+      const timeoutMs = 1_000;
       const logs: Array<{ stream: string; chunk: string }> = [];
       let killTarget: { pid: number | null; processGroupId: number | null } | null = null;
       let monitorFired = false;

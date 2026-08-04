@@ -453,19 +453,19 @@ describe("shared ACPX engine runtime behavior", () => {
     });
   });
 
-  it("keeps Claude startup model handling and Gemini session config handling unchanged", async () => {
-    const claude = await runExecutor({ agent: "claude", model: "claude-opus-4-7" });
-    expect((claude.meta[0]?.env as Record<string, string>).ANTHROPIC_MODEL).toBe(
-      "claude-opus-4-7",
-    );
-    expect(claude.configOptions).toEqual([]);
+  it("sets the Claude startup model without session config", async () => {
+    const { configOptions, meta } = await runExecutor({ agent: "claude", model: "claude-opus-4-7" });
+    expect((meta[0]?.env as Record<string, string>).ANTHROPIC_MODEL).toBe("claude-opus-4-7");
+    expect(configOptions).toEqual([]);
+  });
 
-    const gemini = await runExecutor({
+  it("sets Gemini model and effort through session config", async () => {
+    const { configOptions } = await runExecutor({
       agent: "gemini",
       model: "gemini-2.5-pro",
       thinkingEffort: "high",
     });
-    expect(gemini.configOptions).toEqual([
+    expect(configOptions).toEqual([
       { key: "model", value: "gemini-2.5-pro" },
       { key: "effort", value: "high" },
     ]);

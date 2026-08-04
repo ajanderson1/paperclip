@@ -1592,7 +1592,9 @@ export async function startAdapterExecutionTargetProcessSessionBridge(input: {
       await new Promise<void>((resolve) => server.close(() => resolve())).catch(() => undefined);
       await client.writeTextFile(
         path.posix.join(stdinDir, `${String(stdinSeq + 1).padStart(12, "0")}.json`),
-        jsonLine({ type: "stdinEnd" }),
+        // EOF is cooperative and an unresponsive child may ignore it. Bridge
+        // teardown is authoritative: terminate the remote relay's child.
+        jsonLine({ type: "terminate" }),
       ).catch(() => undefined);
       await client.remove(sessionDir).catch(() => undefined);
       await fs.rm(proxyDir, { recursive: true, force: true }).catch(() => undefined);
@@ -1693,8 +1695,21 @@ child.on("close", (code, signal) => void writeEvent({ type: "exit", code, signal
 
 async function pollStdin() {
   while (!stdinClosed) {
-    const entries = (await fs.readdir(stdinDir).catch(() => [])).filter((name) => name.endsWith(".json")).sort();
-    for (const name of entries) {
+    let entries;
+    try {
+      entries = await fs.readdir(stdinDir);
+    } catch (error) {
+      // Host-side bridge teardown removes the session directory. Treat that as
+      // an explicit termination signal rather than polling a missing directory
+      // forever and leaking both this relay and its child process.
+      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+        stdinClosed = true;
+        child.kill();
+        return;
+      }
+      throw error;
+    }
+    for (const name of entries.filter((name) => name.endsWith(".json")).sort()) {
       const file = path.posix.join(stdinDir, name);
       const raw = await fs.readFile(file, "utf8").catch(() => null);
       await fs.rm(file, { force: true }).catch(() => undefined);
@@ -1706,6 +1721,10 @@ async function pollStdin() {
         stdinClosed = true;
         child.stdin.end();
         break;
+      } else if (message.type === "terminate") {
+        stdinClosed = true;
+        child.kill();
+        return;
       }
     }
     if (!stdinClosed) await new Promise((resolve) => setTimeout(resolve, 50));
