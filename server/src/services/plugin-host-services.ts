@@ -490,6 +490,32 @@ if (_logFlushInterval.unref) _logFlushInterval.unref();
 /** Maximum time (ms) to keep a session event subscription alive before forcing cleanup. */
 const SESSION_EVENT_SUBSCRIPTION_TIMEOUT_MS = 30 * 60 * 1_000; // 30 minutes
 
+/**
+ * Sessions created through the plugin SDK are OWNED by the creating plugin, and
+ * that ownership is proven by the SHAPE OF `task_key`: `list`, `sendMessage` and
+ * `close` all resolve a session with `LIKE 'plugin:<pluginKey>:session:%'`.
+ *
+ * `create` used to store a caller-supplied `taskKey` verbatim. Because the SDK
+ * exposes `taskKey?: string` with no documented format, a plugin that passed its
+ * own label created a session it could never use and could never close: `create`
+ * returned an id, the next `sendMessage` threw `Session not found: <id>`, and the
+ * row leaked because `close` failed the same check.
+ *
+ * A caller's label is now treated as a LABEL and namespaced into the owned
+ * prefix rather than replacing it. An already-prefixed key is passed through
+ * unchanged, so callers that hand-built the prefix (as the bundled
+ * `plugin-llm-wiki` does) keep working byte-for-byte.
+ */
+export function pluginSessionTaskKeyPrefix(pluginKey: string): string {
+  return `plugin:${pluginKey}:session:`;
+}
+
+export function buildPluginSessionTaskKey(pluginKey: string, requested?: string): string {
+  const prefix = pluginSessionTaskKeyPrefix(pluginKey);
+  if (!requested) return `${prefix}${randomUUID()}`;
+  return requested.startsWith(prefix) ? requested : `${prefix}${requested}`;
+}
+
 export function buildHostServices(
   db: Db,
   pluginId: string,
@@ -2979,7 +3005,7 @@ export function buildHostServices(
         await ensurePluginAvailableForCompany(companyId);
         const agent = await agents.getById(params.agentId);
         requireInCompany("Agent", agent, companyId);
-        const taskKey = params.taskKey ?? `plugin:${pluginKey}:session:${randomUUID()}`;
+        const taskKey = buildPluginSessionTaskKey(pluginKey, params.taskKey);
 
         const row = await db
           .insert(agentTaskSessionsTable)
@@ -3015,7 +3041,7 @@ export function buildHostServices(
             and(
               eq(agentTaskSessionsTable.agentId, params.agentId),
               eq(agentTaskSessionsTable.companyId, companyId),
-              like(agentTaskSessionsTable.taskKey, `plugin:${pluginKey}:session:%`),
+              like(agentTaskSessionsTable.taskKey, `${pluginSessionTaskKeyPrefix(pluginKey)}%`),
             ),
           )
           .orderBy(desc(agentTaskSessionsTable.createdAt));
@@ -3045,7 +3071,7 @@ export function buildHostServices(
             and(
               eq(agentTaskSessionsTable.id, params.sessionId),
               eq(agentTaskSessionsTable.companyId, companyId),
-              like(agentTaskSessionsTable.taskKey, `plugin:${pluginKey}:session:%`),
+              like(agentTaskSessionsTable.taskKey, `${pluginSessionTaskKeyPrefix(pluginKey)}%`),
             ),
           )
           .then((rows) => rows[0] ?? null);
@@ -3154,7 +3180,7 @@ export function buildHostServices(
             and(
               eq(agentTaskSessionsTable.id, params.sessionId),
               eq(agentTaskSessionsTable.companyId, companyId),
-              like(agentTaskSessionsTable.taskKey, `plugin:${pluginKey}:session:%`),
+              like(agentTaskSessionsTable.taskKey, `${pluginSessionTaskKeyPrefix(pluginKey)}%`),
             ),
           )
           .returning()

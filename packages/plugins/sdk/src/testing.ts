@@ -566,7 +566,12 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
   const localFolderStatuses = new Map<string, PluginLocalFolderStatus>();
   const localFolderFiles = new Map<string, string>();
 
-  const sessions = new Map<string, AgentSession>();
+  // The real host proves session ownership by the SHAPE of `task_key`, not by a
+  // map key. The fake used a bare Map, so it could not express that invariant --
+  // a plugin that supplied its own `taskKey` passed every test and then failed on
+  // its first `sendMessage` against a real Paperclip. Record the resolved key so
+  // the double enforces the same rule the host does.
+  const sessions = new Map<string, AgentSession & { taskKey: string }>();
   const sessionEventCallbacks = new Map<string, (event: AgentSessionEvent) => void>();
 
   const events: EventRegistration[] = [];
@@ -2211,7 +2216,12 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           const cid = requireCompanyId(companyId);
           const agent = agents.get(agentId);
           if (!isInCompany(agent, cid)) throw new Error(`Agent not found: ${agentId}`);
-          const session: AgentSession = {
+          const ownedPrefix = `plugin:${manifest.id}:session:`;
+          const taskKey = opts?.taskKey
+            ? (opts.taskKey.startsWith(ownedPrefix) ? opts.taskKey : `${ownedPrefix}${opts.taskKey}`)
+            : `${ownedPrefix}${randomUUID()}`;
+          const session: AgentSession & { taskKey: string } = {
+            taskKey,
             sessionId: randomUUID(),
             agentId,
             companyId: cid,
@@ -2232,6 +2242,11 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           requireCapability(manifest, capabilitySet, "agent.sessions.send");
           const session = sessions.get(sessionId);
           if (!session || session.status !== "active") throw new Error(`Session not found or closed: ${sessionId}`);
+          // Mirror the host's ownership filter, so a taskKey the host would
+          // refuse also fails here instead of silently passing.
+          if (!session.taskKey.startsWith(`plugin:${manifest.id}:session:`)) {
+            throw new Error(`Session not found: ${sessionId}`);
+          }
           if (session.companyId !== companyId) throw new Error(`Session not found: ${sessionId}`);
           if (opts.onEvent) {
             sessionEventCallbacks.set(sessionId, opts.onEvent);
@@ -2242,6 +2257,9 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           requireCapability(manifest, capabilitySet, "agent.sessions.close");
           const session = sessions.get(sessionId);
           if (!session) throw new Error(`Session not found: ${sessionId}`);
+          if (!session.taskKey.startsWith(`plugin:${manifest.id}:session:`)) {
+            throw new Error(`Session not found: ${sessionId}`);
+          }
           if (session.companyId !== companyId) throw new Error(`Session not found: ${sessionId}`);
           session.status = "closed";
           sessionEventCallbacks.delete(sessionId);
